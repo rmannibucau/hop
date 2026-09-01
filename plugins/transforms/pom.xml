@@ -101,6 +101,7 @@
         <module>joinrows</module>
         <module>json</module>
         <module>kafka</module>
+        <module>kubernetes</module>
         <module>languagemodelchat</module>
         <module>ldap</module>
         <module>loadfileinput</module>

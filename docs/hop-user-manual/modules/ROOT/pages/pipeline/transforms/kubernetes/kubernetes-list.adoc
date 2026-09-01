@@ -1,0 +1,60 @@
+////
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+////
+:documentationPath: /pipeline/transforms/kubernetes/
+:language: en_US
+:description: The Kubernetes List transform lists Kubernetes resources and writes one output row per resource.
+
+= Kubernetes List
+
+== Description
+
+The *Kubernetes List* transform lists resources of a given kind in a namespace and writes one output row per
+resource, using a xref:metadata-types/kubernetes/kubernetes-connection.adoc[Kubernetes Connection].
+
+== Options
+
+[options="header", width="90%", cols="1,3"]
+|===
+|Option|Description
+|Kubernetes connection|Name of the Kubernetes connection metadata to use.
+|Kind|The resource kind to list (for example `Pod`, `Service`, `Deployment`).
+|Namespace|The namespace to list. Defaults to the connection namespace.
+|Label selector|An optional label selector to narrow the listed resources.
+|Limit|Optional maximum number of resources to list (`0` = no limit).
+|Include status|When enabled, the resource `.status` object is added as a JSON `status` field.
+|===
+
+== Output fields
+
+[options="header", width="90%", cols="1,3"]
+|===
+|Field|Description
+|name|The name of the resource.
+|namespace|The namespace of the resource.
+|kind|The kind of the resource.
+|apiVersion|The API version of the resource.
+|resource_uid|The UID of the resource.
+|creationTimestamp|The creation timestamp of the resource.
+|status|The resource status JSON (only when *Include status* is enabled).
+|===
+
+== Related transforms
+
+* xref:pipeline/transforms/kubernetes/kubernetes-get.adoc[Kubernetes Get]
+* xref:pipeline/transforms/kubernetes/kubernetes-watch.adoc[Kubernetes Watch]

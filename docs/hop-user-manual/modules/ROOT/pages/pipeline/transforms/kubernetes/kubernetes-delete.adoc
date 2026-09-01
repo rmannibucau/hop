@@ -1,0 +1,49 @@
+////
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+////
+:documentationPath: /pipeline/transforms/kubernetes/
+:language: en_US
+:description: The Kubernetes Delete transform deletes a Kubernetes resource per input row.
+
+= Kubernetes Delete
+
+== Description
+
+The *Kubernetes Delete* transform deletes a Kubernetes resource for each incoming row, using a
+xref:metadata-types/kubernetes/kubernetes-connection.adoc[Kubernetes Connection]. The resource name is taken
+from a configured field or from a fixed name, and it can also be narrowed with a label selector.
+
+== Options
+
+[options="header", width="90%", cols="1,3"]
+|===
+|Option|Description
+|Kubernetes connection|Name of the Kubernetes connection metadata to use.
+|Kind|The resource kind to delete (for example `Pod`, `Service`).
+|Name|A fixed resource name, used when no name field is configured.
+|Name field name|The input field that provides the resource name per row.
+|Namespace|The namespace of the resource. Defaults to the connection namespace.
+|Label selector|An optional label selector; when set, matching resources are listed and deleted.
+|Ignore not found|When enabled, deleting a missing resource is not an error.
+|Output field name|Name of the output field that receives `true`/`false` for deletion success. Default `deleted`.
+|===
+
+== Related transforms
+
+* xref:pipeline/transforms/kubernetes/kubernetes-list.adoc[Kubernetes List]
+* xref:workflow/actions/kubernetes/kubernetes-delete.adoc[Kubernetes Delete action]

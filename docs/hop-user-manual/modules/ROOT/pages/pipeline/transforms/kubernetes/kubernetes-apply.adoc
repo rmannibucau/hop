@@ -1,0 +1,58 @@
+////
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+////
+:documentationPath: /pipeline/transforms/kubernetes/
+:language: en_US
+:description: The Kubernetes Apply transform applies a manifest read from an input field as a Kubernetes resource.
+
+= Kubernetes Apply
+
+== Description
+
+The *Kubernetes Apply* transform reads a YAML or JSON manifest from an input field for each incoming row and
+creates or updates the corresponding Kubernetes resource, using a
+xref:metadata-types/kubernetes/kubernetes-connection.adoc[Kubernetes Connection].
+
+== Options
+
+[options="header", width="90%", cols="1,3"]
+|===
+|Option|Description
+|Kubernetes connection|Name of the Kubernetes connection metadata to use.
+|Manifest field name|The name of the input field that contains the manifest.
+|Namespace|Overrides the namespace for resources that do not declare one.
+|Output field name|Name of the output field that receives the result (`Created`, `Updated`, `Unchanged` or an error). Default `result`.
+|Wait ready|When enabled, waits for deployment rollouts referenced by each manifest to complete.
+|Wait timeout (seconds)|Maximum time to wait for a rollout before failing.
+|Await field (JSON pointer)|Optional JSON pointer to a field to evaluate when waiting, so any "unknown" kind can be awaited. For example `/status.applicationState.state`.
+|Await value|The expected, stringified value of the await field. For example `Completed`.
+|===
+
+== Awaiting custom resources
+
+When *Wait ready* is enabled and an *Await field* / *Await value* pair is provided, the transform polls the
+applied resource and waits until the value at the JSON pointer equals the expected value (compared as
+strings). This makes it possible to await workloads that are not special-cased by the transform.
+
+TIP: Apache Spark operators expose a *SparkApplication* CR. To wait for completion, set Await field to
+`/status.applicationState.state` and Await value to `Completed`.
+
+== Related transforms
+
+* xref:pipeline/transforms/kubernetes/kubernetes-get.adoc[Kubernetes Get]
+* xref:workflow/actions/kubernetes/kubernetes-apply.adoc[Kubernetes Apply action]

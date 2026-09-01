@@ -1,0 +1,64 @@
+////
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+////
+:documentationPath: /metadata-types/kubernetes/
+:language: en_US
+:description: A reusable Kubernetes connection shared by the Kubernetes actions and transforms.
+
+= Kubernetes Connection
+
+== Description
+
+A *Kubernetes Connection* is a shared, named configuration that identifies a Kubernetes API server and
+how to authenticate to it. It is used by the xref:workflow/actions/kubernetes/kubernetes-apply.adoc[Kubernetes workflow actions]
+and the xref:pipeline/transforms/kubernetes/kubernetes-list.adoc[Kubernetes pipeline transforms].
+
+All connection fields support variables (`${...}`).
+
+== Connection sources
+
+The connection can be populated either from a *kubeconfig file*, with *explicit connection keys*, or left
+empty to fall back to the *in-cluster service account*. When a kubeconfig file is configured it provides the
+master URL, context and credentials by default; any explicitly configured field overrides it.
+
+*Explicit fields* take the highest precedence, then the *kubeconfig file*, then the *in-cluster service account*.
+
+== Options
+
+[options="header", width="90%", cols="1,3"]
+|===
+|Option|Description
+|Master URL|The Kubernetes API server URL. Empty = derived from the kubeconfig file or the in-cluster service account.
+|Kubeconfig file|Path to a kubeconfig file, supports variables. Default `${KUBECONFIG}` or `~/.kube/config`.
+|Context|The context name inside the kubeconfig to use. Empty = the current (default) context.
+|Namespace|The default namespace applied to operations that do not specify one, supports variables.
+|Token file|Path to a file whose contents are the bearer token. Supports variables and secret resolvers. Empty = from kubeconfig.
+|CA certificate file|Path to a PEM CA certificate bundle used to verify the API server. Empty = from kubeconfig.
+|Client certificate file|Client certificate (PEM) for mutual TLS, used with the client key. Empty = from kubeconfig.
+|Client key file|Client private key (PEM) for mutual TLS, used with the client certificate.
+|Skip TLS verification|Skip verification of the API server certificate. Intended for development only.
+|Connect timeout|Connection timeout in seconds on the HTTP client. Default `10`.
+|Request timeout|Request timeout in seconds on the HTTP client. Default `120`.
+|===
+
+== See also
+
+* xref:workflow/actions/kubernetes/kubernetes-apply.adoc[Kubernetes Apply]
+* xref:workflow/actions/kubernetes/kubernetes-delete.adoc[Kubernetes Delete]
+* xref:pipeline/transforms/kubernetes/kubernetes-list.adoc[Kubernetes List]
+* xref:pipeline/transforms/kubernetes/kubernetes-get.adoc[Kubernetes Get]

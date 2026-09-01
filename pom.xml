@@ -106,6 +106,7 @@
         <byte-buddy.version>1.18.11</byte-buddy.version>
         <commonmark.version>0.30.0</commonmark.version>
         <cyclonedx-maven-plugin.version>2.9.3</cyclonedx-maven-plugin.version>
+        <fusion.version>1.1.0</fusion.version>
         <grpc.version>1.83.1</grpc.version>
         <hadoop.thirdparty.version>1.4.0</hadoop.thirdparty.version>
         <hadoop.version>3.4.2</hadoop.version>
