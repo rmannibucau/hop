@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.hop.pipeline.transforms.formula.util;
+package org.apache.hop.pipeline.transforms.formula;
 
 import static org.apache.hop.pipeline.transforms.formula.util.FormulaFieldsExtractor.getFormulaFieldList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -40,29 +40,25 @@ import org.apache.hop.core.row.value.ValueMetaNumber;
 import org.apache.hop.core.row.value.ValueMetaString;
 import org.apache.hop.core.row.value.ValueMetaTimestamp;
 import org.apache.hop.core.variables.Variables;
-import org.apache.hop.pipeline.transforms.formula.FormulaMetaFunction;
-import org.apache.hop.pipeline.transforms.formula.FormulaPoi;
 import org.apache.poi.ss.usermodel.CellType;
-import org.apache.poi.ss.usermodel.CellValue;
-import org.junit.jupiter.api.AfterEach;
+import org.apache.poi.ss.usermodel.CompiledFormula;
+import org.apache.poi.ss.usermodel.DateUtil;
+import org.apache.poi.ss.usermodel.FormulaError;
+import org.apache.poi.ss.usermodel.LightCellValue;
+import org.apache.poi.ss.usermodel.StandaloneFormulaEngine;
+import org.apache.poi.ss.usermodel.StandaloneFormulaEvaluator;
+import org.apache.poi.ss.util.CellReference;
 import org.junit.jupiter.api.Test;
 
-/** Unit tests for {@link FormulaParser} formula evaluation and field binding. */
-class FormulaParserEvaluationTest {
-
-  private FormulaPoi poi;
-
-  @AfterEach
-  void tearDown() throws Exception {
-    if (poi != null) {
-      poi.destroy();
-      poi = null;
-    }
-  }
+/**
+ * Unit tests for the workbook-free formula evaluation used by the formula transform:
+ * field binding, variable resolution, replacement fields and error semantics.
+ */
+class FormulaEngineEvaluationTest {
 
   @Test
   void numberFieldGreaterThanLiteral() throws Exception {
-    CellValue result =
+    LightCellValue result =
         evaluate(List.of(field(new ValueMetaNumber("amount"), 150.0)), "[amount] > 100", false);
 
     assertEquals(CellType.BOOLEAN, result.getCellType());
@@ -71,7 +67,7 @@ class FormulaParserEvaluationTest {
 
   @Test
   void stringFieldEqualsLiteral() throws Exception {
-    CellValue result =
+    LightCellValue result =
         evaluate(
             List.of(field(new ValueMetaString("status"), "active")),
             "[status] = \"active\"",
@@ -83,7 +79,7 @@ class FormulaParserEvaluationTest {
 
   @Test
   void booleanFieldIsTrue() throws Exception {
-    CellValue result =
+    LightCellValue result =
         evaluate(
             List.of(field(new ValueMetaBoolean("flag"), Boolean.TRUE)), "[flag] = TRUE", false);
 
@@ -93,7 +89,7 @@ class FormulaParserEvaluationTest {
 
   @Test
   void bigNumberFieldGreaterThanLiteral() throws Exception {
-    CellValue result =
+    LightCellValue result =
         evaluate(
             List.of(field(new ValueMetaBigNumber("amount"), new BigDecimal("200.5"))),
             "[amount] > 100",
@@ -105,7 +101,7 @@ class FormulaParserEvaluationTest {
 
   @Test
   void nullFieldIsBlankWhenSetNaIsFalse() throws Exception {
-    CellValue result =
+    LightCellValue result =
         evaluate(
             List.of(field(new ValueMetaInteger("amount"), null)),
             "IF(ISBLANK([amount]), 1, 0)",
@@ -117,7 +113,7 @@ class FormulaParserEvaluationTest {
 
   @Test
   void nullFieldIsNaWhenSetNaIsTrue() throws Exception {
-    CellValue result =
+    LightCellValue result =
         evaluate(List.of(field(new ValueMetaInteger("amount"), null)), "ISNA([amount])", true);
 
     assertEquals(CellType.BOOLEAN, result.getCellType());
@@ -127,7 +123,7 @@ class FormulaParserEvaluationTest {
   @Test
   void dateFieldOnTheExcelEpochIsEvaluated() throws Exception {
     // 1899-12-31 is the oldest representable date: it is Excel date serial number 0.
-    CellValue result =
+    LightCellValue result =
         evaluate(List.of(field(new ValueMetaDate("start"), date(1899, 12, 31))), "[start]", false);
 
     assertEquals(CellType.NUMERIC, result.getCellType());
@@ -167,7 +163,7 @@ class FormulaParserEvaluationTest {
 
   @Test
   void nullDateFieldIsNotRejected() throws Exception {
-    CellValue result =
+    LightCellValue result =
         evaluate(
             List.of(field(new ValueMetaDate("start"), null)), "IF(ISBLANK([start]), 1, 0)", false);
 
@@ -177,7 +173,7 @@ class FormulaParserEvaluationTest {
 
   @Test
   void twoIntegerFieldsAreSummed() throws Exception {
-    CellValue result =
+    LightCellValue result =
         evaluate(
             List.of(field(new ValueMetaInteger("a"), 10L), field(new ValueMetaInteger("b"), 20L)),
             "[a] + [b]",
@@ -200,12 +196,8 @@ class FormulaParserEvaluationTest {
     FormulaMetaFunction fn =
         new FormulaMetaFunction("result", formula, IValueMeta.TYPE_INTEGER, -1, -1, "", false);
 
-    poi = new FormulaPoi(msg -> {});
-    FormulaParser parser =
-        new FormulaParser(
-            fn, rowMeta, row, poi, new Variables(), replaceMap, getFormulaFieldList(formula));
-
-    CellValue result = parser.getFormulaValue();
+    LightCellValue result =
+        evaluate(new Variables(), rowMeta, row, fn, replaceMap, formula);
     assertEquals(CellType.NUMERIC, result.getCellType());
     assertEquals(84.0, result.getNumberValue());
   }
@@ -215,7 +207,7 @@ class FormulaParserEvaluationTest {
     Variables variables = new Variables();
     variables.setVariable("THRESHOLD", "50");
 
-    CellValue result =
+    LightCellValue result =
         evaluate(
             variables,
             List.of(field(new ValueMetaInteger("amount"), 60L)),
@@ -226,12 +218,12 @@ class FormulaParserEvaluationTest {
     assertTrue(result.getBooleanValue());
   }
 
-  private CellValue evaluate(List<FieldBinding> bindings, String formula, boolean setNa)
+  private LightCellValue evaluate(List<FieldBinding> bindings, String formula, boolean setNa)
       throws Exception {
     return evaluate(new Variables(), bindings, formula, setNa);
   }
 
-  private CellValue evaluate(
+  private LightCellValue evaluate(
       Variables variables, List<FieldBinding> bindings, String formula, boolean setNa)
       throws Exception {
     RowMeta rowMeta = new RowMeta();
@@ -245,18 +237,96 @@ class FormulaParserEvaluationTest {
     FormulaMetaFunction fn =
         new FormulaMetaFunction("result", formula, IValueMeta.TYPE_STRING, -1, -1, "", setNa);
 
-    poi = new FormulaPoi(msg -> {});
-    FormulaParser parser =
-        new FormulaParser(
-            fn,
-            rowMeta,
-            row,
-            poi,
-            variables,
-            new HashMap<>(),
-            getFormulaFieldList(variables.resolve(formula)));
+    return evaluate(variables, rowMeta, row, fn, new HashMap<>(), formula);
+  }
 
-    return parser.getFormulaValue();
+  /** Mirrors the resolution, replacement and binding logic of {@link Formula}. */
+  private LightCellValue evaluate(
+      Variables variables,
+      RowMeta rowMeta,
+      Object[] row,
+      FormulaMetaFunction fn,
+      HashMap<String, String> replaceMap,
+      String rawFormula)
+      throws Exception {
+    String formula = variables.resolve(fn.getFormula());
+    List<String> fields = getFormulaFieldList(formula);
+
+    boolean replaced = false;
+    for (String field : fields) {
+      String realFieldName = replaceMap.get(field);
+      if (realFieldName != null) {
+        formula = formula.replace("[" + field + "]", "[" + realFieldName + "]");
+        replaced = true;
+      }
+    }
+    if (replaced) {
+      fields = getFormulaFieldList(formula);
+    }
+
+    StandaloneFormulaEngine.Builder builder = StandaloneFormulaEngine.newBuilder();
+    int[] indexes = new int[fields.size()];
+    for (int f = 0; f < fields.size(); f++) {
+      builder.input(fields.get(f));
+      indexes[f] = rowMeta.indexOfValue(fields.get(f));
+    }
+    for (int f = 0; f < fields.size(); f++) {
+      formula = formula.replace(
+          "[" + fields.get(f) + "]", CellReference.convertNumToColString(f) + "1");
+    }
+
+    CompiledFormula compiled = builder.build().compile(formula);
+    StandaloneFormulaEvaluator evaluator = compiled.newEvaluator();
+    bindInputs(evaluator, rowMeta, row, indexes, fn);
+    return evaluator.evaluate();
+  }
+
+  private void bindInputs(
+      StandaloneFormulaEvaluator evaluator,
+      RowMeta rowMeta,
+      Object[] row,
+      int[] indexes,
+      FormulaMetaFunction formula)
+      throws HopValueException {
+    for (int f = 0; f < indexes.length; f++) {
+      int position = indexes[f];
+      IValueMeta fieldMeta = rowMeta.getValueMeta(position);
+      if (row[position] != null) {
+        if (fieldMeta.isString()) {
+          evaluator.setString(f, rowMeta.getString(row, position));
+        } else if (fieldMeta.isBoolean()) {
+          evaluator.setBoolean(f, rowMeta.getBoolean(row, position));
+        } else if (fieldMeta.isBigNumber()) {
+          evaluator.setNumber(f, rowMeta.getNumber(row, position));
+        } else if (fieldMeta.isDate()) {
+          Date date = rowMeta.getDate(row, position);
+          checkSupportedDate(fieldMeta, date);
+          evaluator.setDate(f, date);
+        } else if (fieldMeta.isInteger()) {
+          evaluator.setNumber(f, rowMeta.getInteger(row, position));
+        } else if (fieldMeta.isNumber()) {
+          evaluator.setNumber(f, rowMeta.getNumber(row, position));
+        } else {
+          evaluator.setString(f, rowMeta.getString(row, position));
+        }
+      } else if (formula.isSetNa()) {
+        evaluator.setError(f, FormulaError.NA);
+      } else {
+        evaluator.setBlank(f);
+      }
+    }
+  }
+
+  private void checkSupportedDate(IValueMeta fieldMeta, Date date) throws HopValueException {
+    if (date == null || DateUtil.getExcelDate(date) >= 0) {
+      return;
+    }
+    throw new HopValueException(
+        "Field ["
+            + fieldMeta.getName()
+            + "] date "
+            + fieldMeta.getString(date)
+            + " is before 1899-12-31");
   }
 
   private static FieldBinding field(IValueMeta meta, Object value) {

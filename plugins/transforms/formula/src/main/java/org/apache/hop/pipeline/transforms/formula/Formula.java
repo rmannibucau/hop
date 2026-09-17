@@ -19,11 +19,10 @@ package org.apache.hop.pipeline.transforms.formula;
 
 import static org.apache.hop.pipeline.transforms.formula.util.FormulaFieldsExtractor.getFormulaFieldList;
 
-import java.io.IOException;
 import java.sql.Timestamp;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
-import java.util.stream.IntStream;
 import org.apache.hop.core.exception.HopException;
 import org.apache.hop.core.exception.HopRuntimeException;
 import org.apache.hop.core.exception.HopTransformException;
@@ -37,44 +36,23 @@ import org.apache.hop.pipeline.Pipeline;
 import org.apache.hop.pipeline.PipelineMeta;
 import org.apache.hop.pipeline.transform.BaseTransform;
 import org.apache.hop.pipeline.transform.TransformMeta;
-import org.apache.hop.pipeline.transforms.formula.util.FormulaParser;
 import org.apache.poi.ss.usermodel.CellType;
-import org.apache.poi.ss.usermodel.CellValue;
+import org.apache.poi.ss.usermodel.CompiledFormula;
 import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.FormulaError;
+import org.apache.poi.ss.usermodel.LightCellValue;
+import org.apache.poi.ss.usermodel.StandaloneFormulaEngine;
+import org.apache.poi.ss.usermodel.StandaloneFormulaEvaluator;
+import org.apache.poi.ss.util.CellReference;
 
 public class Formula extends BaseTransform<FormulaMeta, FormulaData> {
   private static final Class<?> PKG = Formula.class; // for i18n purposes
 
-  private FormulaPoi[] poi;
-  private List<String>[] formulaFieldLists;
   private final HashMap<String, String> replaceMap = new HashMap<>();
 
   @Override
   public boolean init() {
     return true;
-  }
-
-  @Override
-  public void dispose() {
-    if (poi != null) {
-      for (final var it : poi) {
-        try {
-          it.destroy();
-        } catch (IOException e) {
-          logError("Unable to close temporary workbook", e);
-        }
-      }
-    }
-    super.dispose();
-  }
-
-  @Override
-  public void batchComplete() throws HopException {
-    super.batchComplete();
-    for (final var it : poi) {
-      it.reset();
-    }
   }
 
   @Override
@@ -123,17 +101,47 @@ public class Formula extends BaseTransform<FormulaMeta, FormulaData> {
         }
       }
 
-      // create one backing row per formula
-      poi =
-          IntStream.range(0, meta.getFormulas().size())
-              .mapToObj(it -> new FormulaPoi(this::logDebug))
-              .toArray(FormulaPoi[]::new);
-      // compute only once for all rows the default field list
-      formulaFieldLists =
-          meta.getFormulas().stream()
-              .map(FormulaMetaFunction::getFormula)
-              .map(f -> getFormulaFieldList(resolve(f)))
-              .toArray(List[]::new);
+      // compile each formula once against a workbook-free engine: every referenced
+      // field becomes a named input of a virtual single-row sheet, [field] tokens are
+      // resolved to cell references up front. Parsing errors fail at init instead of
+      // on the first row.
+      int formulaCount = meta.getFormulas().size();
+      data.compiledFormulas = new CompiledFormula[formulaCount];
+      data.evaluators = new StandaloneFormulaEvaluator[formulaCount];
+      data.fieldRowIndexes = new int[formulaCount][];
+      for (int i = 0; i < formulaCount; i++) {
+        FormulaMetaFunction fn = meta.getFormulas().get(i);
+        String formula = resolve(fn.getFormula());
+        List<String> fields = getFormulaFieldList(formula);
+
+        // fields can reference the output of an earlier formula through its
+        // replacement field, re-align the field list with those real names first
+        boolean replaced = false;
+        for (String field : fields) {
+          String realFieldName = replaceMap.get(field);
+          if (realFieldName != null) {
+            formula = formula.replace("[" + field + "]", "[" + realFieldName + "]");
+            replaced = true;
+          }
+        }
+        if (replaced) {
+          fields = getFormulaFieldList(formula);
+        }
+
+        StandaloneFormulaEngine.Builder builder = StandaloneFormulaEngine.newBuilder();
+        int[] indexes = new int[fields.size()];
+        for (int f = 0; f < fields.size(); f++) {
+          builder.input(fields.get(f));
+          indexes[f] = data.outputRowMeta.indexOfValue(fields.get(f));
+        }
+        for (int f = 0; f < fields.size(); f++) {
+          formula = formula.replace(
+              "[" + fields.get(f) + "]", CellReference.convertNumToColString(f) + "1");
+        }
+        data.fieldRowIndexes[i] = indexes;
+        data.compiledFormulas[i] = builder.build().compile(formula);
+        data.evaluators[i] = data.compiledFormulas[i].newEvaluator();
+      }
     }
 
     int tempIndex = getInputRowMeta().size();
@@ -146,17 +154,10 @@ public class Formula extends BaseTransform<FormulaMeta, FormulaData> {
     for (int i = 0; i < meta.getFormulas().size(); i++) {
       Object outputValue = null;
       FormulaMetaFunction formula = meta.getFormulas().get(i);
-      FormulaParser parser =
-          new FormulaParser(
-              formula,
-              data.outputRowMeta,
-              outputRowData,
-              poi[i],
-              variables,
-              replaceMap,
-              formulaFieldLists[i]);
+      StandaloneFormulaEvaluator evaluator = data.evaluators[i];
       try {
-        CellValue cellValue = parser.getFormulaValue();
+        bindFormulaInputs(evaluator, formula, i, outputRowData);
+        LightCellValue cellValue = evaluator.evaluate();
         CellType cellType = cellValue.getCellType();
 
         int outputValueType = formula.getValueType();
@@ -270,7 +271,7 @@ public class Formula extends BaseTransform<FormulaMeta, FormulaData> {
    * @return null for {@code #N/A}
    * @throws HopValueException for any other error value
    */
-  private Object getErrorValue(CellValue cellValue, FormulaMetaFunction formula)
+  private Object getErrorValue(LightCellValue cellValue, FormulaMetaFunction formula)
       throws HopValueException {
     byte errorCode = cellValue.getErrorValue();
     if (FormulaError.isValidCode(errorCode) && FormulaError.forInt(errorCode) == FormulaError.NA) {
@@ -311,6 +312,76 @@ public class Formula extends BaseTransform<FormulaMeta, FormulaData> {
     stopAll();
     setOutputDone();
     return false;
+  }
+
+  /**
+   * Binds the current row values to the formula inputs. The dispatch mirrors what the
+   * evaluator expects for each input type; a null value is either blank or #N/A
+   * depending on the "Set null value to N/A" option.
+   *
+   * @param evaluator the evaluator of the formula being calculated
+   * @param formula the formula being calculated
+   * @param formulaIndex the index of the formula in the transform configuration
+   * @param dataRow the current output row, formulas can read earlier formula results
+   * @throws HopValueException when a value can not be bound
+   */
+  private void bindFormulaInputs(
+      StandaloneFormulaEvaluator evaluator,
+      FormulaMetaFunction formula,
+      int formulaIndex,
+      Object[] dataRow)
+      throws HopValueException {
+    int[] indexes = data.fieldRowIndexes[formulaIndex];
+    for (int f = 0; f < indexes.length; f++) {
+      int position = indexes[f];
+      IValueMeta fieldMeta = data.outputRowMeta.getValueMeta(position);
+      if (dataRow[position] != null) {
+        // most common first to avoid a lot of "if" for nothing
+        if (fieldMeta.isString()) {
+          evaluator.setString(f, data.outputRowMeta.getString(dataRow, position));
+        } else if (fieldMeta.isBoolean()) {
+          evaluator.setBoolean(f, data.outputRowMeta.getBoolean(dataRow, position));
+        } else if (fieldMeta.isBigNumber()) {
+          evaluator.setNumber(f, data.outputRowMeta.getNumber(dataRow, position));
+        } else if (fieldMeta.isDate()) {
+          Date date = data.outputRowMeta.getDate(dataRow, position);
+          checkSupportedDate(fieldMeta, date);
+          evaluator.setDate(f, date);
+        } else if (fieldMeta.isInteger()) {
+          evaluator.setNumber(f, data.outputRowMeta.getInteger(dataRow, position));
+        } else if (fieldMeta.isNumber()) {
+          evaluator.setNumber(f, data.outputRowMeta.getNumber(dataRow, position));
+        } else {
+          evaluator.setString(f, data.outputRowMeta.getString(dataRow, position));
+        }
+      } else if (formula.isSetNa()) {
+        evaluator.setError(f, FormulaError.NA);
+      } else {
+        evaluator.setBlank(f);
+      }
+    }
+  }
+
+  /**
+   * Formulas are evaluated as Excel date serial numbers, which start at 1899-12-31 (serial 0). POI
+   * silently maps anything older to the same BAD_DATE sentinel (-1), so every earlier date would
+   * collapse to one value and come out of the transform blank or, after date arithmetic, plain
+   * wrong. Report it instead of losing the value without a trace.
+   *
+   * @param fieldMeta the metadata of the date field being bound to the formula
+   * @param date the value to bind, may be null
+   * @throws HopValueException when the date can not be represented as an Excel date serial number
+   */
+  private void checkSupportedDate(IValueMeta fieldMeta, Date date) throws HopValueException {
+    if (date == null || DateUtil.getExcelDate(date) >= 0) {
+      return;
+    }
+    throw new HopValueException(
+        BaseMessages.getString(
+            PKG,
+            "Formula.Exception.DateBeforeExcelEpoch",
+            fieldMeta.getName(),
+            fieldMeta.getString(date)));
   }
 
   protected Object getReturnValue(

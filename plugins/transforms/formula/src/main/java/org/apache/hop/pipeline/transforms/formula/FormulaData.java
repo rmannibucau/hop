@@ -20,6 +20,8 @@ package org.apache.hop.pipeline.transforms.formula;
 import org.apache.hop.core.row.IRowMeta;
 import org.apache.hop.pipeline.transform.BaseTransformData;
 import org.apache.hop.pipeline.transform.ITransformData;
+import org.apache.poi.ss.usermodel.CompiledFormula;
+import org.apache.poi.ss.usermodel.StandaloneFormulaEvaluator;
 
 @SuppressWarnings("java:S1104")
 public class FormulaData extends BaseTransformData implements ITransformData {
@@ -37,6 +39,18 @@ public class FormulaData extends BaseTransformData implements ITransformData {
   public IRowMeta outputRowMeta;
   public int[] returnType;
   public int[] replaceIndex;
+
+  /** One compiled formula per configured formula, shared and immutable. */
+  public CompiledFormula[] compiledFormulas;
+
+  /**
+   * One evaluator per configured formula, bound to this transform copy: not thread
+   * safe, reused for every row.
+   */
+  public StandaloneFormulaEvaluator[] evaluators;
+
+  /** Per formula: row index of each declared formula input field. */
+  public int[][] fieldRowIndexes;
 
   public FormulaData() {
     super();

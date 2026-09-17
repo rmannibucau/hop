@@ -102,7 +102,7 @@
         <okhttp.version>4.12.0</okhttp.version>
         <okio.version>3.18.1</okio.version>
         <picocli-version>4.7.7</picocli-version>
-        <poi.version>5.5.1</poi.version>
+        <poi.version>6.0.0-SNAPSHOT</poi.version>
         <protobuf-java.version>4.34.1</protobuf-java.version>
         <re2j.version>1.8</re2j.version>
         <reactive-streams.version>1.0.4</reactive-streams.version>
